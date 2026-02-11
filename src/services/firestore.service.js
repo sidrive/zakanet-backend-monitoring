@@ -63,8 +63,23 @@ async function getClient(clientId) {
   }
 }
 
+async function getAllClients() {
+  try {
+    const snap = await db.collection('clients').get()
+
+    return snap.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }))
+  } catch (err) {
+    console.error('[FIRESTORE_GET_ALL_ERROR]', err.message)
+    return []
+  }
+}
+
 module.exports = {
   updateClientMeta,
   createClient,
-  getClient
+  getClient,
+  getAllClients
 }
