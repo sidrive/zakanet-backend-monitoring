@@ -32,7 +32,7 @@ exports.receivePing = async (req, res) => {
     // ==============================
     // 1️⃣ VALIDASI PAYLOAD
     // ==============================
-    if (!client_id || !isBoolean(alive)) {
+    if (!client_id || typeof alive !== 'boolean') {
       return res.status(400).json({
         success: false,
         message: 'invalid payload'
@@ -40,18 +40,14 @@ exports.receivePing = async (req, res) => {
     }
 
     const now = Date.now()
-
-    // ==============================
-    // 2️⃣ AMBIL STATE DARI MEMORY
-    // ==============================
     const prev = getClientState(client_id)
 
     // ==============================
-    // 3️⃣ RATE LIMIT 5 DETIK
+    // 2️⃣ RATE LIMIT + ANTI CLOCK BUG
     // ==============================
     let prevLastPing = prev?.last_ping || 0
 
-    // Guard: jika last_ping lebih besar dari waktu sekarang (clock anomaly)
+    // Guard jika timestamp masa depan
     if (prevLastPing > now) {
       prevLastPing = 0
     }
@@ -64,12 +60,12 @@ exports.receivePing = async (req, res) => {
     }
 
     // ==============================
-    // 4️⃣ HITUNG STATUS & LATENCY DENGAN THRESHOLD
+    // 3️⃣ THRESHOLD LOGIC (ANTI SPIKE)
     // ==============================
     let fail_count = prev?.fail_count || 0
     let success_count = prev?.success_count || 0
     let status = prev?.status || 'offline'
-    
+
     if (!alive) {
       fail_count += 1
       success_count = 0
@@ -77,24 +73,39 @@ exports.receivePing = async (req, res) => {
       success_count += 1
       fail_count = 0
     }
-    
-    // Tentukan status final
+
     if (fail_count >= OFFLINE_THRESHOLD) {
       status = 'offline'
     }
-    
+
     if (success_count >= ONLINE_THRESHOLD) {
       status = 'online'
     }
 
-    const rt = alive && isValidNumber(response_time)
-      ? Number(response_time)
-      : null
+    // ==============================
+    // 4️⃣ RESPONSE TIME & LATENCY
+    // ==============================
+    const rt =
+      alive && Number.isFinite(Number(response_time))
+        ? Number(response_time)
+        : null
 
-      const latency_level = status === 'online'
-      ? getLatencyLevel(rt)
-      : 'offline'
+    function getLatencyLevel(ms) {
+      if (!Number.isFinite(ms)) return null
+      if (ms <= 50) return 'excellent'
+      if (ms <= 150) return 'good'
+      if (ms <= 300) return 'fair'
+      return 'poor'
+    }
 
+    const latency_level =
+      status === 'online'
+        ? getLatencyLevel(rt)
+        : 'offline'
+
+    // ==============================
+    // 5️⃣ BUILD NEW STATE
+    // ==============================
     const newState = {
       client_id,
       status,
@@ -103,31 +114,38 @@ exports.receivePing = async (req, res) => {
       last_ping: now,
       last_error: status === 'offline' ? 'ping_failed' : null,
       fail_count,
-      success_count
+      success_count,
+      last_sync: prev?.last_sync || 0
     }
 
     // ==============================
-    // 5️⃣ CEK PERUBAHAN SIGNIFIKAN
+    // 6️⃣ CEK PERUBAHAN SIGNIFIKAN
     // ==============================
-    const changed =
-      !prev ||
-      prev.status !== status ||
-      prev.latency_level !== latency_level
+    const statusChanged = prev?.status !== status
+    const latencyChanged = prev?.latency_level !== latency_level
+    const heartbeatDue =
+      now - (prev?.last_sync || 0) > SYNC_INTERVAL
+
+    const shouldSync =
+      !prev || statusChanged || latencyChanged || heartbeatDue
 
     // ==============================
-    // 6️⃣ UPDATE LOCAL (MEMORY + SQLITE)
+    // 7️⃣ UPDATE LOCAL STATE (MEMORY + SQLITE)
     // ==============================
     await setClientState(newState)
 
     // ==============================
-    // 7️⃣ SYNC KE FIRESTORE (TERBATAS)
+    // 8️⃣ SYNC FIRESTORE TERBATAS
     // ==============================
-    if (changed) {
+    if (shouldSync) {
       await updateClientMeta(client_id, {
         status,
         latency_level,
         last_seen: now
       })
+
+      newState.last_sync = now
+      await setClientState(newState)
     }
 
     return res.json({
