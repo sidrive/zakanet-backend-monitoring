@@ -6,6 +6,8 @@ const {
 const { updateClientMeta } = require('../services/firestore.service')
 
 const MIN_INTERVAL = 5000 // 5 detik
+const OFFLINE_THRESHOLD = 3
+const ONLINE_THRESHOLD = 2
 
 function getLatencyLevel(ms) {
   if (!Number.isFinite(ms)) return null
@@ -55,15 +57,34 @@ exports.receivePing = async (req, res) => {
     }
 
     // ==============================
-    // 4️⃣ HITUNG STATUS & LATENCY
+    // 4️⃣ HITUNG STATUS & LATENCY DENGAN THRESHOLD
     // ==============================
-    const status = alive ? 'online' : 'offline'
+    let fail_count = prev?.fail_count || 0
+    let success_count = prev?.success_count || 0
+    let status = prev?.status || 'offline'
+    
+    if (!alive) {
+      fail_count += 1
+      success_count = 0
+    } else {
+      success_count += 1
+      fail_count = 0
+    }
+    
+    // Tentukan status final
+    if (fail_count >= OFFLINE_THRESHOLD) {
+      status = 'offline'
+    }
+    
+    if (success_count >= ONLINE_THRESHOLD) {
+      status = 'online'
+    }
 
     const rt = alive && isValidNumber(response_time)
       ? Number(response_time)
       : null
 
-    const latency_level = alive
+      const latency_level = status === 'online'
       ? getLatencyLevel(rt)
       : 'offline'
 
@@ -73,7 +94,9 @@ exports.receivePing = async (req, res) => {
       response_time: rt,
       latency_level,
       last_ping: now,
-      last_error: alive ? null : 'ping_failed'
+      last_error: status === 'offline' ? 'ping_failed' : null,
+      fail_count,
+      success_count
     }
 
     // ==============================
