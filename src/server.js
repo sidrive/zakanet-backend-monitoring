@@ -1,4 +1,15 @@
 require('dotenv').config()
+const { initDB } = require('./services/sqlite.service')
+initDB()
+console.log('✅ SQLite initialized')
+
+const { loadStateFromDB } = require('./services/state.service')
+loadStateFromDB()
+console.log('✅ Memory cache loaded from SQLite')
+
+const { startOfflineDetector } = require('./services/offline-detector.service')
+startOfflineDetector()
+
 const app = require('./app')
 
 const PORT = process.env.PORT || 3000
