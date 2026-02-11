@@ -8,7 +8,13 @@ let memoryState = {}
 
 async function loadStateFromDB() {
  const rows = await dbGetAllStates()
+ const now = Date.now()
+
  rows.forEach(row => {
+  // Reset jika timestamp masa depan
+  if (row.last_ping && row.last_ping > now) {
+    row.last_ping = 0
+  }
    memoryState[row.client_id] = row
  })
 }

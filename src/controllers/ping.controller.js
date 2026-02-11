@@ -49,7 +49,14 @@ exports.receivePing = async (req, res) => {
     // ==============================
     // 3️⃣ RATE LIMIT 5 DETIK
     // ==============================
-    if (prev && now - prev.last_ping < MIN_INTERVAL) {
+    let prevLastPing = prev?.last_ping || 0
+
+    // Guard: jika last_ping lebih besar dari waktu sekarang (clock anomaly)
+    if (prevLastPing > now) {
+      prevLastPing = 0
+    }
+
+    if (prev && now - prevLastPing < MIN_INTERVAL) {
       return res.status(429).json({
         success: false,
         message: 'ping too frequent'
