@@ -5,9 +5,11 @@ const {
 
 const { updateClientMeta } = require('../services/firestore.service')
 
-const MIN_INTERVAL = 5000 // 5 detik
-const OFFLINE_THRESHOLD = 3
-const ONLINE_THRESHOLD = 2
+const MIN_INTERVAL = 5000          // 5 detik rate limit
+const OFFLINE_THRESHOLD = 3        // 3x gagal → offline
+const ONLINE_THRESHOLD = 2         // 2x sukses → online
+const SYNC_INTERVAL = 30000        // 30 detik heartbeat sync ke Firestore
+
 
 function getLatencyLevel(ms) {
   if (!Number.isFinite(ms)) return null
@@ -60,7 +62,7 @@ exports.receivePing = async (req, res) => {
     }
 
     // ==============================
-    // 3️⃣ THRESHOLD LOGIC (ANTI SPIKE)
+    // 3️⃣ THRESHOLD LOGIC
     // ==============================
     let fail_count = prev?.fail_count || 0
     let success_count = prev?.success_count || 0
@@ -90,21 +92,24 @@ exports.receivePing = async (req, res) => {
         ? Number(response_time)
         : null
 
-    function getLatencyLevel(ms) {
-      if (!Number.isFinite(ms)) return null
-      if (ms <= 50) return 'excellent'
-      if (ms <= 150) return 'good'
-      if (ms <= 300) return 'fair'
-      return 'poor'
-    }
-
     const latency_level =
       status === 'online'
         ? getLatencyLevel(rt)
         : 'offline'
 
     // ==============================
-    // 5️⃣ BUILD NEW STATE
+    // 5️⃣ CEK PERLU SYNC FIRESTORE?
+    // ==============================
+    const statusChanged = prev?.status !== status
+    const latencyChanged = prev?.latency_level !== latency_level
+    const lastSync = prev?.last_sync || 0
+    const heartbeatDue = now - lastSync > SYNC_INTERVAL
+
+    const shouldSync =
+      !prev || statusChanged || latencyChanged || heartbeatDue
+
+    // ==============================
+    // 6️⃣ BUILD FINAL STATE
     // ==============================
     const newState = {
       client_id,
@@ -115,22 +120,11 @@ exports.receivePing = async (req, res) => {
       last_error: status === 'offline' ? 'ping_failed' : null,
       fail_count,
       success_count,
-      last_sync: prev?.last_sync || 0
+      last_sync: shouldSync ? now : lastSync
     }
 
     // ==============================
-    // 6️⃣ CEK PERUBAHAN SIGNIFIKAN
-    // ==============================
-    const statusChanged = prev?.status !== status
-    const latencyChanged = prev?.latency_level !== latency_level
-    const heartbeatDue =
-      now - (prev?.last_sync || 0) > SYNC_INTERVAL
-
-    const shouldSync =
-      !prev || statusChanged || latencyChanged || heartbeatDue
-
-    // ==============================
-    // 7️⃣ UPDATE LOCAL STATE (MEMORY + SQLITE)
+    // 7️⃣ UPDATE LOCAL STATE (1x SAJA)
     // ==============================
     await setClientState(newState)
 
@@ -143,9 +137,6 @@ exports.receivePing = async (req, res) => {
         latency_level,
         last_seen: now
       })
-
-      newState.last_sync = now
-      await setClientState(newState)
     }
 
     return res.json({
@@ -163,3 +154,4 @@ exports.receivePing = async (req, res) => {
     })
   }
 }
+
