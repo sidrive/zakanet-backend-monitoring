@@ -33,16 +33,23 @@ async function updateClientMeta(clientId, data) {
 // 3️⃣ OPTIONAL - CREATE CLIENT
 // (Dipakai saat register client baru)
 // ==============================
-async function createClient(clientId, payload = {}) {
+async function createClient(data) {
   try {
-    await db.collection('clients')
-      .doc(clientId)
-      .set({
-        created_at: Date.now(),
-        ...payload
-      })
+    if (!data) throw new Error('No data provided')
+
+    const ref = await db.collection('clients').add({
+      ...data,
+      created_at: Date.now()
+    })
+
+    return {
+      id: ref.id,
+      ...data
+    }
+
   } catch (err) {
     console.error('[FIRESTORE_CREATE_ERROR]', err.message)
+    throw err
   }
 }
 
