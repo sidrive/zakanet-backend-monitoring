@@ -1,12 +1,26 @@
 const admin = require('firebase-admin')
+const path = require('path')
+const fs = require('fs')
 
-// ==============================
-// 1️⃣ INIT FIREBASE (SAFE INIT)
-// ==============================
+let credential
+
+// Coba pakai env dulu
+if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+  credential = admin.credential.applicationDefault()
+} else {
+  // fallback ke file lokal
+  const localPath = path.join(__dirname, '../../serviceAccount.json')
+
+  if (fs.existsSync(localPath)) {
+    const serviceAccount = require(localPath)
+    credential = admin.credential.cert(serviceAccount)
+  } else {
+    throw new Error('No Firebase credential found')
+  }
+}
+
 if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.applicationDefault(),
-  })
+  admin.initializeApp({ credential })
 }
 
 const db = admin.firestore()
