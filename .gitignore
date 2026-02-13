@@ -35,3 +35,4 @@ Thumbs.db
 monitoring.db
 *.db
 storage/*.*
+src/storage/
