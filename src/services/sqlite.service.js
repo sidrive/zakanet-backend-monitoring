@@ -1,20 +1,59 @@
 const sqlite3 = require('sqlite3').verbose()
 const path = require('path')
+const fs = require('fs')
 
-const dbPath = path.join(__dirname, '../storage/monitoring.db')
+const storageDir = path.join(__dirname, '../storage')
+if (!fs.existsSync(storageDir)) {
+  fs.mkdirSync(storageDir, { recursive: true })
+}
+
+const dbPath = path.join(storageDir, 'monitoring.db')
 
 const db = new sqlite3.Database(dbPath)
 
 function initDB() {
-  db.run(`
-    CREATE TABLE IF NOT EXISTS client_state (
-      client_id TEXT PRIMARY KEY,
-      status TEXT,
-      response_time INTEGER,
-      latency_level TEXT,
-      last_ping INTEGER
-    )
-  `)
+  db.serialize(() => {
+
+    // 1️⃣ Buat tabel jika belum ada
+    db.run(`
+      CREATE TABLE IF NOT EXISTS client_state (
+        client_id TEXT PRIMARY KEY,
+        status TEXT,
+        response_time INTEGER,
+        latency_level TEXT,
+        last_ping INTEGER
+      )
+    `)
+
+    // 2️⃣ Cek kolom yang ada
+    db.all(`PRAGMA table_info(client_state)`, [], (err, columns) => {
+      if (err) {
+        console.error('PRAGMA ERROR:', err)
+        return
+      }
+
+      const existingColumns = columns.map(col => col.name)
+
+      // 3️⃣ Tambah kolom jika belum ada
+      const requiredColumns = [
+        { name: 'last_error', type: 'TEXT' }
+      ]
+
+      requiredColumns.forEach(col => {
+        if (!existingColumns.includes(col.name)) {
+          console.log(`🛠 Migrating: adding column ${col.name}`)
+
+          db.run(`
+            ALTER TABLE client_state 
+            ADD COLUMN ${col.name} ${col.type}
+          `)
+        }
+      })
+    })
+
+  })
+
+  console.log('✅ SQLite initialized with auto-migration')
 }
 
 function upsertClientState(data) {
