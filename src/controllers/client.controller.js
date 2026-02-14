@@ -1,4 +1,4 @@
-const { createClient, getAllClients } = require('../services/firestore.service')
+const { createClient, getAllClients, db } = require('../services/firestore.service')
 
 function isValidNumber(val) {
   return Number.isFinite(Number(val))
@@ -6,7 +6,7 @@ function isValidNumber(val) {
 
 exports.createClient = async (req, res) => {
   try {
-    const { name, ip_address, lat, lng } = req.body
+    const { name, ip_address, lat, lng, cluster_id } = req.body
 
     // ==============================
     // VALIDASI
@@ -18,14 +18,37 @@ exports.createClient = async (req, res) => {
       })
     }
 
+    if (!cluster_id) {
+      return res.status(400).json({
+        success: false,
+        error: "cluster_id is required"
+      })
+    }
+    
+    // VALIDASI CLUSTER EXIST
+    const clusterDoc = await db
+      .collection('clusters')
+      .doc(cluster_id)
+      .get()
+
+    if (!clusterDoc.exists) {
+      return res.status(400).json({
+        success: false,
+        message: 'cluster_id tidak valid'
+      })
+    }
+
+
     const client = {
       name: name || null,
       ip_address,
       lat: Number(lat),
       lng: Number(lng),
-      status: 'unknown',     // status awal (realtime nanti dari SQLite)
+      status: 'offline',     // status awal (realtime nanti dari SQLite)
       last_ping: null,
-      response_time: null
+      response_time: null,
+      cluster_id,
+      created_at: Date.now()
     }
 
     const created = await createClient(client)

@@ -99,6 +99,7 @@ async function getAllClients() {
 }
 
 module.exports = {
+  db,
   updateClientMeta,
   createClient,
   getClient,
