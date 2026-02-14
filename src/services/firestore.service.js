@@ -26,20 +26,35 @@ if (!admin.apps.length) {
 const db = admin.firestore()
 
 // ==============================
-// 2️⃣ UPDATE CLIENT METADATA ONLY
-// (Dipakai saat status berubah)
+// CONFIG WRITE GUARD
+// ==============================
+const MIN_FIRESTORE_SYNC = 120000 // 2 menit minimal antar sync per client
+
+const lastWriteMap = new Map() // clientId -> timestamp
+
+// ==============================
+// UPDATE CLIENT META (OPTIMIZED)
 // ==============================
 async function updateClientMeta(clientId, data) {
   try {
     if (!clientId || !data) return
 
+    const now = Date.now()
+    const lastWrite = lastWriteMap.get(clientId) || 0
+
+    // 🔥 WRITE GUARD
+    if (now - lastWrite < MIN_FIRESTORE_SYNC) {
+      return
+    }
+
     await db.collection('clients')
       .doc(clientId)
       .set(data, { merge: true })
 
+    lastWriteMap.set(clientId, now)
+
   } catch (err) {
     console.error('[FIRESTORE_SYNC_ERROR]', err.message)
-    // Jangan throw error biar monitoring tetap jalan
   }
 }
 
@@ -84,6 +99,10 @@ async function getClient(clientId) {
   }
 }
 
+// ==============================
+// GET ALL CLIENTS (ADMIN PANEL ONLY)
+// ⚠ JANGAN DIPAKAI UNTUK POLLING
+// ==============================
 async function getAllClients() {
   try {
     const snap = await db.collection('clients').get()
