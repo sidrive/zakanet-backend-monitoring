@@ -9,21 +9,24 @@ function startOfflineDetector() {
     const now = Date.now()
     const states = getAllClientStates()
 
-    for (const clientId in states) {
-      const client = states[clientId]
+    for (const client of states) {
+      if (!client.last_ping) continue
 
-      if (
-        client.status === 'online' &&
-        now - client.last_ping > OFFLINE_THRESHOLD
-      ) {
-        console.log(`[AUTO_OFFLINE] ${clientId}`)
+      const isTimeout = now - client.last_ping > OFFLINE_TIMEOUT
+      const alreadyOffline = client.status === 'offline'
 
-        await forceOffline(clientId)
+      if (isTimeout && !alreadyOffline) {
+        // 🔥 Update memory dulu (realtime source)
+        setClientState({
+          client_id: client.client_id,
+          status: 'offline'
+        })
 
-        await updateClientMeta(clientId, {
+        // 🔥 Sync Firestore (akan tetap lewat write guard)
+        await updateClientMeta(client.client_id, {
           status: 'offline',
           latency_level: 'offline',
-          last_seen: client.last_ping
+          last_seen: now
         })
       }
     }
