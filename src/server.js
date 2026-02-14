@@ -3,9 +3,9 @@ const { initDB } = require('./services/sqlite.service')
 initDB()
 console.log('✅ SQLite initialized')
 
-const { loadStateFromDB } = require('./services/state.service')
-loadStateFromDB()
-console.log('✅ Memory cache loaded from SQLite')
+// const { loadStateFromDB } = require('./services/state.service')
+// loadStateFromDB()
+// console.log('✅ Memory cache loaded from SQLite')
 
 const { startOfflineDetector } = require('./services/offline-detector.service')
 startOfflineDetector()

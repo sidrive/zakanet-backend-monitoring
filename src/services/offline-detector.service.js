@@ -1,4 +1,4 @@
-const { getAllStates, forceOffline } = require('./state.service')
+const { getAllClientStates, forceOffline } = require('./state.service')
 const { updateClientMeta } = require('./firestore.service')
 
 const OFFLINE_THRESHOLD = 15000 // 15 detik
@@ -7,7 +7,7 @@ const CHECK_INTERVAL = 10000    // cek tiap 10 detik
 function startOfflineDetector() {
   setInterval(async () => {
     const now = Date.now()
-    const states = getAllStates()
+    const states = getAllClientStates()
 
     for (const clientId in states) {
       const client = states[clientId]
