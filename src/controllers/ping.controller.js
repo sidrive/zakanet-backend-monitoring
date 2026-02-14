@@ -8,7 +8,7 @@ const { updateClientMeta } = require('../services/firestore.service')
 const MIN_INTERVAL = 5000          // 5 detik rate limit
 const OFFLINE_THRESHOLD = 3        // 3x gagal → offline
 const ONLINE_THRESHOLD = 2         // 2x sukses → online
-const SYNC_INTERVAL = 30000        // 30 detik heartbeat sync ke Firestore
+const SYNC_INTERVAL = 600000        // 30 detik heartbeat sync ke Firestore
 
 
 function getLatencyLevel(ms) {
@@ -106,7 +106,10 @@ exports.receivePing = async (req, res) => {
     const heartbeatDue = now - lastSync > SYNC_INTERVAL
 
     const shouldSync =
-      !prev || statusChanged || latencyChanged || heartbeatDue
+      !prev ||                      // first time
+      statusChanged ||              // online/offline change
+      latencyChanged ||             // latency level change
+      (status === 'offline' && heartbeatDue)  // heartbeat hanya kalau offline
 
     // ==============================
     // 6️⃣ BUILD FINAL STATE
