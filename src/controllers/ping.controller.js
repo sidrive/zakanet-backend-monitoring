@@ -80,7 +80,7 @@ exports.receivePing = async (req, res) => {
     let success_count = prev?.success_count || 0
     let status = prev?.status || 'offline'
 
-    if (!alivebool) {
+    if (!aliveBool) {
       fail_count += 1
       success_count = 0
     } else {
@@ -100,7 +100,7 @@ exports.receivePing = async (req, res) => {
     // 4️⃣ RESPONSE TIME & LATENCY
     // ==============================
     const rt =
-      alivebool && Number.isFinite(Number(response_time))
+      aliveBool && Number.isFinite(Number(response_time))
         ? Number(response_time)
         : null
 
