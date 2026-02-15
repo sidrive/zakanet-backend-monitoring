@@ -27,14 +27,16 @@ exports.syncClients = async (req, res) => {
           latency_level: null,
           last_ping: null,
           fail_count: 0,
-          success_count: 0
+          success_count: 0,
+          ip_address: firestoreData.ip_address
         })
       }
     })
 
     return res.json({
       success: true,
-      message: 'Client metadata synced'
+      message: 'Client metadata synced',
+      data: firestoreData
     })
 
   } catch (err) {
