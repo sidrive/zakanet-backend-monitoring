@@ -29,17 +29,29 @@ function isValidNumber(val) {
 
 exports.receivePing = async (req, res) => {
   try {
+    const ip =
+    req.headers['x-forwarded-for']?.split(',')[0] ||
+    req.socket?.remoteAddress ||
+    null
+    
     const { client_id, alive, response_time } = req.body
 
     // ==============================
     // 1️⃣ VALIDASI PAYLOAD
     // ==============================
-    if (!client_id || typeof alive !== 'boolean') {
+    if (!client_id || alive === undefined) {
       return res.status(400).json({
         success: false,
         message: 'invalid payload'
       })
     }
+    
+    // Normalisasi alive supaya fleksibel
+    const aliveBool =
+      alive === true ||
+      alive === 'true' ||
+      alive === 1 ||
+      alive === '1'
 
     const now = Date.now()
     const prev = getClientState(client_id)
@@ -68,7 +80,7 @@ exports.receivePing = async (req, res) => {
     let success_count = prev?.success_count || 0
     let status = prev?.status || 'offline'
 
-    if (!alive) {
+    if (!alivebool) {
       fail_count += 1
       success_count = 0
     } else {
@@ -88,7 +100,7 @@ exports.receivePing = async (req, res) => {
     // 4️⃣ RESPONSE TIME & LATENCY
     // ==============================
     const rt =
-      alive && Number.isFinite(Number(response_time))
+      alivebool && Number.isFinite(Number(response_time))
         ? Number(response_time)
         : null
 
@@ -109,7 +121,7 @@ exports.receivePing = async (req, res) => {
       !prev ||                      // first time
       statusChanged ||              // online/offline change
       latencyChanged ||             // latency level change
-      (status === 'offline' && heartbeatDue)  // heartbeat hanya kalau offline
+      heartbeatDue  // heartbeat hanya kalau offline
 
     // ==============================
     // 6️⃣ BUILD FINAL STATE
@@ -138,7 +150,8 @@ exports.receivePing = async (req, res) => {
       await updateClientMeta(client_id, {
         status,
         latency_level,
-        last_seen: now
+        last_seen: now,
+        ip
       })
     }
 
