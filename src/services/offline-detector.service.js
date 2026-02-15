@@ -12,7 +12,7 @@ function startOfflineDetector() {
     for (const client of states) {
       if (!client.last_ping) continue
 
-      const isTimeout = now - client.last_ping > OFFLINE_TIMEOUT
+      const isTimeout = now - client.last_ping > OFFLINE_THRESHOLD
       const alreadyOffline = client.status === 'offline'
 
       if (isTimeout && !alreadyOffline) {
