@@ -29,7 +29,7 @@ function isValidNumber(val) {
 
 exports.receivePing = async (req, res) => {
   try {
-    console.log('ping', req)
+    console.log('ping', req.body)
     const { client_id, alive, response_time } = req.body
 
     // ==============================
