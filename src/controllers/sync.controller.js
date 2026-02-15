@@ -36,7 +36,7 @@ exports.syncClients = async (req, res) => {
     return res.json({
       success: true,
       message: 'Client metadata synced',
-      data: firestoreData
+      data: res
     })
 
   } catch (err) {
