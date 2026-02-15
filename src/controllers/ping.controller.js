@@ -33,7 +33,7 @@ exports.receivePing = async (req, res) => {
     req.headers['x-forwarded-for']?.split(',')[0] ||
     req.socket?.remoteAddress ||
     null
-    
+
     const { client_id, alive, response_time } = req.body
 
     // ==============================
@@ -127,6 +127,7 @@ exports.receivePing = async (req, res) => {
     // 6️⃣ BUILD FINAL STATE
     // ==============================
     const newState = {
+      ...prev, 
       client_id,
       status,
       response_time: rt,

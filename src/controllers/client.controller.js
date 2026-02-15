@@ -129,7 +129,7 @@ exports.syncClients = async (req, res) => {
 
     return res.json({
       success: true,
-      message: 'Client metadata synced',
+      message: 'Client metadata synced lah',
       data: data
     })
 
