@@ -121,13 +121,16 @@ exports.syncClients = async (req, res) => {
         name: data.name,
         cluster_id: data.cluster_id,
         lat: data.lat,
-        lng: data.lng
+        lng: data.lng,
+        ip_address: data.ip_address,
+        client_id: data.client_id
       })
     })
 
     return res.json({
       success: true,
-      message: 'Client metadata synced'
+      message: 'Client metadata synced',
+      data: data
     })
 
   } catch (err) {
