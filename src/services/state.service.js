@@ -60,7 +60,9 @@ async function loadInitialMetadata(db) {
       success_count: 0,
       last_ping: null,
       response_time: null,
-      latency_level: null
+      latency_level: null,
+      cluster_id: data.cluster_id,
+      ip_address: data.ip_address
     })
   })
 

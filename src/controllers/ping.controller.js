@@ -136,7 +136,8 @@ exports.receivePing = async (req, res) => {
       last_error: status === 'offline' ? 'ping_failed' : null,
       fail_count,
       success_count,
-      last_sync: shouldSync ? now : lastSync
+      last_sync: shouldSync ? now : lastSync,
+      ip_address: ip
     }
 
     // ==============================
@@ -151,8 +152,8 @@ exports.receivePing = async (req, res) => {
       await updateClientMeta(client_id, {
         status,
         latency_level,
-        last_seen: now,
-        ip
+        last_sync: now,
+        ip_address: ip
       })
     }
 

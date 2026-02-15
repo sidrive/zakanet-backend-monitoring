@@ -26,7 +26,7 @@ function startOfflineDetector() {
         await updateClientMeta(client.client_id, {
           status: 'offline',
           latency_level: 'offline',
-          last_seen: now
+          last_sync: now
         })
       }
     }
