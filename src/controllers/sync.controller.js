@@ -15,6 +15,7 @@ exports.syncClients = async (req, res) => {
           ...existing,
           name: firestoreData.name,
           cluster_id: firestoreData.cluster_id,
+          ip_address: firestoreData.ip_address
         })
       } else {
         // client belum ada di memory (belum pernah ping)
