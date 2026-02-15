@@ -29,11 +29,7 @@ function isValidNumber(val) {
 
 exports.receivePing = async (req, res) => {
   try {
-    const ip =
-    req.headers['x-forwarded-for']?.split(',')[0] ||
-    req.socket?.remoteAddress ||
-    null
-
+    console.log('ping', req)
     const { client_id, alive, response_time } = req.body
 
     // ==============================
@@ -137,7 +133,7 @@ exports.receivePing = async (req, res) => {
       fail_count,
       success_count,
       last_sync: shouldSync ? now : lastSync,
-      ip_address: ip
+      ip_address: prev.ip_address
     }
 
     // ==============================
@@ -153,7 +149,7 @@ exports.receivePing = async (req, res) => {
         status,
         latency_level,
         last_sync: now,
-        ip_address: ip
+        ip_address: prev.ip_address
       })
     }
 
