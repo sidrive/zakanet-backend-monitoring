@@ -37,7 +37,6 @@ exports.syncClients = async (req, res) => {
     return res.json({
       success: true,
       message: 'Client metadata synced',
-      data: res
     })
 
   } catch (err) {
