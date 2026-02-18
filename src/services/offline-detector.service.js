@@ -1,4 +1,4 @@
-const { getAllClientStates, forceOffline } = require('./state.service')
+const { getAllClientStates, forceOffline, setClientState } = require('./state.service')
 const { updateClientMeta } = require('./firestore.service')
 
 const OFFLINE_THRESHOLD = 15000 // 15 detik
