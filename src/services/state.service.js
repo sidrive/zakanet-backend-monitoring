@@ -52,7 +52,6 @@ async function loadInitialMetadata(db) {
     stateMap.set(doc.id, {
       client_id: doc.id,
       name: data.name,
-      cluster_id: data.cluster_id,
       lat: data.lat,
       lng: data.lng,
       status: data.status || 'offline',
@@ -69,10 +68,29 @@ async function loadInitialMetadata(db) {
   console.log('Initial metadata loaded into memory')
 }
 
+function deleteClientState(clientId) {
+  if (!clientId) return
+  stateMap.delete(clientId)
+}
+
+async function syncWithFirestore(db) {
+  const snap = await db.collection('clients').get()
+  const firestoreIds = snap.docs.map(doc => doc.id)
+
+  // Hapus state yang tidak ada di Firestore
+  for (const key of stateMap.keys()) {
+    if (!firestoreIds.includes(key)) {
+      stateMap.delete(key)
+    }
+  }
+}
+
 module.exports = {
   getClientState,
   setClientState,
   mergeClientMetadata,
   getAllClientStates,
-  loadInitialMetadata
+  loadInitialMetadata,
+  deleteClientState,
+  syncWithFirestore
 }
