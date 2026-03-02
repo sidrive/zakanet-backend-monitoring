@@ -2,6 +2,8 @@ const admin = require('firebase-admin')
 const path = require('path')
 const fs = require('fs')
 
+const { getFirestore, FieldValue } = require('firebase-admin/firestore')
+
 let credential
 
 // Coba pakai env dulu
@@ -117,10 +119,25 @@ async function getAllClients() {
   }
 }
 
+async function addClientLog(client_id, data) {
+  const db = getFirestore()
+
+  await db
+    .collection('clients')
+    .doc(client_id)
+    .collection('logs')
+    .add({
+      client_id,
+      ...data,
+      timestamp: FieldValue.serverTimestamp()
+    })
+}
+
 module.exports = {
   db,
   updateClientMeta,
   createClient,
   getClient,
-  getAllClients
+  getAllClients,
+  addClientLog
 }

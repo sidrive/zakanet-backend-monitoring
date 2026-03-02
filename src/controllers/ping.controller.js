@@ -3,7 +3,7 @@ const {
   setClientState 
 } = require('../services/state.service')
 
-const { updateClientMeta } = require('../services/firestore.service')
+const { updateClientMeta, addClientLog } = require('../services/firestore.service')
 
 const MIN_INTERVAL = 5000          // 5 detik rate limit
 const OFFLINE_THRESHOLD = 3        // 3x gagal → offline
@@ -139,6 +139,19 @@ exports.receivePing = async (req, res) => {
     // 7️⃣ UPDATE LOCAL STATE (1x SAJA)
     // ==============================
     await setClientState(newState)
+
+    // ==============================
+    // 7.5️⃣ LOG CONNECT / DISCONNECT
+    // ==============================
+    if (statusChanged) {
+      const logType = status === 'online' ? 'connect' : 'disconnect'
+
+      await addClientLog(client_id, {
+        type: logType,
+        response_time: rt,
+        latency_level
+      })
+    }
 
     // ==============================
     // 8️⃣ SYNC FIRESTORE TERBATAS
