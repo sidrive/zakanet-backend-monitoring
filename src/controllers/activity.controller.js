@@ -13,28 +13,10 @@ exports.getActivity = async (req, res) => {
       .limit(limit)
       .get()
 
-    const logs = []
-
-    for (const doc of snapshot.docs) {
-      const data = doc.data()
-
-      // Ambil data client
-      const clientSnap = await db
-        .collection('clients')
-        .doc(data.client_id)
-        .get()
-
-      const clientData = clientSnap.exists ? clientSnap.data() : {}
-
-      logs.push({
-        id: doc.id,
-        client_id: data.client_id,
-        client_name: clientData?.name || '-',
-        ip_address: clientData?.ip_address || '-',
-        type: data.type,
-        timestamp: data.timestamp
-      })
-    }
+    const logs = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }))
 
     return res.json({
       success: true,

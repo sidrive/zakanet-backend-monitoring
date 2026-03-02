@@ -4,6 +4,7 @@ const {
 } = require('../services/state.service')
 
 const { updateClientMeta, addClientLog } = require('../services/firestore.service')
+const { getFirestore } = require('firebase-admin/firestore')
 
 const MIN_INTERVAL = 5000          // 5 detik rate limit
 const OFFLINE_THRESHOLD = 3        // 3x gagal → offline
@@ -146,7 +147,14 @@ exports.receivePing = async (req, res) => {
     if (statusChanged) {
       const logType = status === 'online' ? 'connect' : 'disconnect'
 
+      const db = getFirestore()
+      const clientSnap = await db.collection('clients').doc(client_id).get()
+
+      const clientData = clientSnap.exists ? clientSnap.data() : {}
+
       await addClientLog(client_id, {
+        client_name: clientData?.name || '-',
+        ip_address: clientData?.ip_address || '-',
         type: logType,
         response_time: rt,
         latency_level
