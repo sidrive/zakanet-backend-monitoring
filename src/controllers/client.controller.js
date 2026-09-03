@@ -44,6 +44,8 @@ exports.createClient = async (req, res) => {
       })
     }
 
+    const now = Date.now()
+
     const clientData = {
       name: name || null,
       ip_address,
@@ -53,7 +55,8 @@ exports.createClient = async (req, res) => {
       status: 'offline',
       last_ping: null,
       response_time: null,
-      created_at: Date.now()
+      created_at: now,
+      offline_since: now
     }
 
     const created = await createClient(clientData)
