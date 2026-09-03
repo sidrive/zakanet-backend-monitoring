@@ -15,7 +15,9 @@ exports.syncClients = async (req, res) => {
           ...existing,
           name: firestoreData.name,
           cluster_id: firestoreData.cluster_id,
-          ip_address: firestoreData.ip_address
+          ip_address: firestoreData.ip_address,
+          lat: firestoreData.lat,
+          lng: firestoreData.lng
         })
       } else {
         // client belum ada di memory (belum pernah ping)
@@ -29,7 +31,9 @@ exports.syncClients = async (req, res) => {
           last_ping: null,
           fail_count: 0,
           success_count: 0,
-          ip_address: firestoreData.ip_address
+          ip_address: firestoreData.ip_address,
+          lat: firestoreData.lat,
+          lng: firestoreData.lng
         })
       }
     })
