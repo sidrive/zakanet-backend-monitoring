@@ -120,15 +120,31 @@ exports.receivePing = async (req, res) => {
       heartbeatDue  // heartbeat hanya kalau offline
 
     // ==============================
+    // 5.5️⃣ TRACK KAPAN MULAI OFFLINE
+    // (jangan direset tiap ping — hanya diisi saat transisi online -> offline,
+    // dan dikosongkan lagi saat kembali online)
+    // ==============================
+    let offline_since = prev?.offline_since ?? null
+
+    if (statusChanged) {
+      offline_since = status === 'offline' ? now : null
+    } else if (status === 'offline' && !offline_since) {
+      // status sudah offline dari awal (belum pernah tercatat transisinya,
+      // mis. state baru dimuat ulang saat server restart) — inisialisasi sekali
+      offline_since = now
+    }
+
+    // ==============================
     // 6️⃣ BUILD FINAL STATE
     // ==============================
     const newState = {
-      ...prev, 
+      ...prev,
       client_id,
       status,
       response_time: rt,
       latency_level,
       last_ping: now,
+      offline_since,
       last_error: status === 'offline' ? 'ping_failed' : null,
       fail_count,
       success_count,
@@ -169,6 +185,7 @@ exports.receivePing = async (req, res) => {
         status,
         latency_level,
         last_sync: now,
+        offline_since,
         // ip_address: prev.ip_address
       })
     }

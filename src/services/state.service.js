@@ -49,19 +49,28 @@ async function loadInitialMetadata(db) {
   snap.docs.forEach(doc => {
     const data = doc.data()
 
+    const status = data.status || 'offline'
+
     stateMap.set(doc.id, {
       client_id: doc.id,
       name: data.name,
       lat: data.lat,
       lng: data.lng,
-      status: data.status || 'offline',
+      status,
       fail_count: 0,
       success_count: 0,
       last_ping: null,
       response_time: null,
       latency_level: null,
       cluster_id: data.cluster_id,
-      ip_address: data.ip_address
+      ip_address: data.ip_address,
+      // Kalau sudah offline dari Firestore tapi belum pernah tercatat kapan
+      // mulainya (data lama), pakai last_ping lama sebagai perkiraan awal —
+      // supaya tidak berhenti di null selamanya.
+      offline_since:
+        status === 'offline'
+          ? data.offline_since || data.last_ping || Date.now()
+          : null
     })
   })
 

@@ -19,14 +19,16 @@ function startOfflineDetector() {
         // 🔥 Update memory dulu (realtime source)
         setClientState({
           client_id: client.client_id,
-          status: 'offline'
+          status: 'offline',
+          offline_since: now
         })
 
         // 🔥 Sync Firestore (akan tetap lewat write guard)
         await updateClientMeta(client.client_id, {
           status: 'offline',
           latency_level: 'offline',
-          last_sync: now
+          last_sync: now,
+          offline_since: now
         })
       }
     }
