@@ -61,6 +61,29 @@ async function updateClientMeta(clientId, data) {
 }
 
 // ==============================
+// UPDATE CLIENT META (IMMEDIATE, NO WRITE GUARD)
+// Dipakai untuk aksi manual admin (set/clear status "inactive") yang harus
+// langsung tersimpan — WRITE GUARD di atas sengaja throttle sync OTOMATIS
+// dari ping/heartbeat, bukan untuk aksi eksplisit user.
+// ==============================
+async function updateClientMetaImmediate(clientId, data) {
+  try {
+    if (!clientId || !data) return
+
+    await db.collection('clients')
+      .doc(clientId)
+      .set(data, { merge: true })
+
+    // Reset timer write-guard supaya sync otomatis berikutnya tidak
+    // ketahan menganggap baru saja ada write.
+    lastWriteMap.set(clientId, Date.now())
+
+  } catch (err) {
+    console.error('[FIRESTORE_SYNC_ERROR]', err.message)
+  }
+}
+
+// ==============================
 // 3️⃣ OPTIONAL - CREATE CLIENT
 // (Dipakai saat register client baru)
 // ==============================
@@ -136,6 +159,7 @@ async function addClientLog(client_id, data) {
 module.exports = {
   db,
   updateClientMeta,
+  updateClientMetaImmediate,
   createClient,
   getClient,
   getAllClients,

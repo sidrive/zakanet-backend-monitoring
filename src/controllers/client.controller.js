@@ -1,8 +1,9 @@
-const { createClient, getAllClients, db } = require('../services/firestore.service')
+const { createClient, getAllClients, db, updateClientMetaImmediate } = require('../services/firestore.service')
 const {
   getAllClientStates,
   mergeClientMetadata,
-  setClientState
+  setClientState,
+  getClientState
 } = require('../services/state.service')
 
 
@@ -142,6 +143,112 @@ exports.syncClients = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'sync failed'
+    })
+  }
+}
+
+// ==============================
+// SET CLIENT TIDAK AKTIF (MANUAL)
+// Status "inactive" di luar siklus online/offline normal berbasis ping —
+// dipakai saat device sengaja dimatikan/dicabut, bukan gangguan. Ping dan
+// offline-detector akan MENGABAIKAN client ini selama statusnya "inactive"
+// (lihat ping.controller.js & offline-detector.service.js) — harus
+// di-"activate" lagi secara manual supaya ping mulai dipakai lagi.
+// ==============================
+exports.setInactive = async (req, res) => {
+  try {
+    const { id } = req.params
+    const note = (req.body?.note || '').trim()
+
+    if (!note) {
+      return res.status(400).json({
+        success: false,
+        message: 'catatan (note) wajib diisi'
+      })
+    }
+
+    const existing = getClientState(id) || await db.collection('clients').doc(id).get().then(d => d.exists ? { client_id: id, ...d.data() } : null)
+
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: 'client tidak ditemukan'
+      })
+    }
+
+    const now = Date.now()
+    const patch = {
+      status: 'inactive',
+      inactive_note: note,
+      inactive_since: now
+    }
+
+    // 🔥 Update memory dulu (realtime source)
+    setClientState({ ...existing, client_id: id, ...patch })
+
+    // 🔥 Persist ke Firestore langsung (bukan lewat write-guard sync
+    // otomatis) — ini aksi eksplisit user, harus tersimpan saat itu juga.
+    await updateClientMetaImmediate(id, patch)
+
+    return res.json({
+      success: true,
+      data: { client_id: id, ...patch }
+    })
+
+  } catch (err) {
+    console.error('[SET_INACTIVE_ERROR]', err)
+
+    return res.status(500).json({
+      success: false,
+      message: 'internal error'
+    })
+  }
+}
+
+// ==============================
+// AKTIFKAN KEMBALI CLIENT (CLEAR STATUS INACTIVE)
+// Kembalikan ke "offline" (bukan langsung "online") — biar siklus
+// online/offline normal berbasis ping yang menentukan status
+// sebenarnya lagi, bukan ditebak di sini. fail/success_count direset
+// supaya tidak kebawa hitungan lama dari sebelum dinonaktifkan.
+// ==============================
+exports.activate = async (req, res) => {
+  try {
+    const { id } = req.params
+
+    const existing = getClientState(id) || await db.collection('clients').doc(id).get().then(d => d.exists ? { client_id: id, ...d.data() } : null)
+
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: 'client tidak ditemukan'
+      })
+    }
+
+    const now = Date.now()
+    const patch = {
+      status: 'offline',
+      offline_since: now,
+      inactive_note: null,
+      inactive_since: null,
+      fail_count: 0,
+      success_count: 0
+    }
+
+    setClientState({ ...existing, client_id: id, ...patch })
+    await updateClientMetaImmediate(id, patch)
+
+    return res.json({
+      success: true,
+      data: { client_id: id, ...patch }
+    })
+
+  } catch (err) {
+    console.error('[ACTIVATE_CLIENT_ERROR]', err)
+
+    return res.status(500).json({
+      success: false,
+      message: 'internal error'
     })
   }
 }

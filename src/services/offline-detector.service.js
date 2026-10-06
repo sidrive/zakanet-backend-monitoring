@@ -12,6 +12,13 @@ function startOfflineDetector() {
     for (const client of states) {
       if (!client.last_ping) continue
 
+      // Client yang sengaja dinonaktifkan manual (status "inactive") TIDAK
+      // boleh di-flip paksa ke "offline" oleh detector ini — justru device
+      // nonaktif biasanya memang berhenti ping sama sekali, itu yang
+      // diharapkan, bukan tanda gangguan. Lihat client.controller.js
+      // setInactive/activate.
+      if (client.status === 'inactive') continue
+
       const isTimeout = now - client.last_ping > OFFLINE_THRESHOLD
       const alreadyOffline = client.status === 'offline'
 

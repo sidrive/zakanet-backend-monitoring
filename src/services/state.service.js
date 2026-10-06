@@ -70,7 +70,14 @@ async function loadInitialMetadata(db) {
       offline_since:
         status === 'offline'
           ? data.offline_since || data.last_ping || Date.now()
-          : null
+          : null,
+      // Status "inactive" (nonaktifkan manual, lihat client.controller.js
+      // setInactive/activate) harus ikut dimuat ulang saat server restart —
+      // kalau tidak, device yang sudah sengaja dinonaktifkan akan balik
+      // dianggap "offline" biasa dan bisa ke-flip ke online lagi oleh ping
+      // berikutnya begitu server restart.
+      inactive_note: status === 'inactive' ? (data.inactive_note ?? null) : null,
+      inactive_since: status === 'inactive' ? (data.inactive_since ?? null) : null
     })
   })
 

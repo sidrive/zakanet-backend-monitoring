@@ -53,6 +53,19 @@ exports.receivePing = async (req, res) => {
     const prev = getClientState(client_id)
 
     // ==============================
+    // 1.5️⃣ CLIENT NONAKTIF MANUAL — ABAIKAN PING SEPENUHNYA
+    // (status "inactive" hanya diubah lewat setInactive/activate di
+    // client.controller.js, tidak boleh ke-flip online/offline oleh
+    // ping/heartbeat selama nonaktif — lihat PROJECT_CONTEXT untuk alasan.)
+    // ==============================
+    if (prev?.status === 'inactive') {
+      return res.json({
+        success: true,
+        message: 'client inactive, ping diabaikan'
+      })
+    }
+
+    // ==============================
     // 2️⃣ RATE LIMIT + ANTI CLOCK BUG
     // ==============================
     let prevLastPing = prev?.last_ping || 0
