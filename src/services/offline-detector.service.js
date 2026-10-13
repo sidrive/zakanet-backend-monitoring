@@ -1,5 +1,5 @@
 const { getAllClientStates, forceOffline, setClientState } = require('./state.service')
-const { updateClientMeta } = require('./firestore.service')
+const { updateClientMetaImmediate } = require('./firestore.service')
 
 const OFFLINE_THRESHOLD = 15000 // 15 detik
 const CHECK_INTERVAL = 10000    // cek tiap 10 detik
@@ -30,8 +30,13 @@ function startOfflineDetector() {
           offline_since: now
         })
 
-        // 🔥 Sync Firestore (akan tetap lewat write guard)
-        await updateClientMeta(client.client_id, {
+        // 🔥 Sync Firestore langsung (TANPA write-guard 2 menit) — ini
+        // transisi status (online->offline karena timeout), harus langsung
+        // tersimpan sama seperti transisi status di ping.controller.js.
+        // Kalau pakai updateClientMeta() yang di-throttle, perubahan ini
+        // bisa "didiamkan" dan hilang permanen kalau server restart
+        // sebelum guard-nya lewat (lihat catatan di ping.controller.js).
+        await updateClientMetaImmediate(client.client_id, {
           status: 'offline',
           latency_level: 'offline',
           last_sync: now,

@@ -3,7 +3,7 @@ const {
   setClientState 
 } = require('../services/state.service')
 
-const { updateClientMeta, addClientLog } = require('../services/firestore.service')
+const { updateClientMeta, updateClientMetaImmediate, addClientLog } = require('../services/firestore.service')
 const { getFirestore } = require('firebase-admin/firestore')
 
 const MIN_INTERVAL = 5000          // 5 detik rate limit
@@ -191,9 +191,25 @@ exports.receivePing = async (req, res) => {
     }
 
     // ==============================
-    // 8️⃣ SYNC FIRESTORE TERBATAS
+    // 8️⃣ SYNC FIRESTORE
+    // Transisi status (online<->offline) WAJIB lewat updateClientMetaImmediate
+    // (tanpa write-guard) — kalau pakai updateClientMeta() yang di-throttle
+    // 2 menit per client, transisi status bisa "didiamkan" tanpa error saat
+    // write-guard masih aktif, dan kalau server restart sebelum guard itu
+    // lewat, Firestore nyangkut di status lama selamanya (in-memory sudah
+    // benar tapi hilang saat restart berikutnya baca dari Firestore yang
+    // basi). Sync lain (latency/heartbeat berkala, status TIDAK berubah)
+    // tetap lewat updateClientMeta() yang di-throttle, supaya tidak
+    // membanjiri Firestore dengan write tiap ping.
     // ==============================
-    if (shouldSync) {
+    if (statusChanged) {
+      await updateClientMetaImmediate(client_id, {
+        status,
+        latency_level,
+        last_sync: now,
+        offline_since,
+      })
+    } else if (shouldSync) {
       await updateClientMeta(client_id, {
         status,
         latency_level,
