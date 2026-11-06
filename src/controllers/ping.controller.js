@@ -105,6 +105,21 @@ exports.receivePing = async (req, res) => {
       status = 'online'
     }
 
+    let duration_offline_ms = null
+    let last_offline_at = prev?.last_offline_at || null
+
+    // Jika baru saja masuk OFFLINE
+    if (status === 'offline' && prev?.status !== 'offline') {
+      last_offline_at = now
+    }
+
+    // Jika baru saja kembali ONLINE
+    if (status === 'online' && prev?.status === 'offline') {
+      if (prev?.last_offline_at) {
+        duration_offline_ms = now - prev.last_offline_at
+      }
+    }
+
     // ==============================
     // 4️⃣ RESPONSE TIME & LATENCY
     // ==============================
@@ -162,7 +177,8 @@ exports.receivePing = async (req, res) => {
       fail_count,
       success_count,
       last_sync: shouldSync ? now : lastSync,
-      ip_address: prev.ip_address
+      ip_address: prev.ip_address,
+      last_offline_at
     }
 
     // ==============================
@@ -185,6 +201,7 @@ exports.receivePing = async (req, res) => {
         client_name: clientData?.name || '-',
         ip_address: clientData?.ip_address || '-',
         type: logType,
+        duration_offline_ms,
         response_time: rt,
         latency_level
       })
