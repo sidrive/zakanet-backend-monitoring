@@ -1,7 +1,73 @@
-const { db, addClientLog } = require('../services/firestore.service')
+const { db, addClientLog, addMaintenancePointLog } = require('../services/firestore.service')
 const { uploadMultipleFiles } = require('../services/storage.service')
 
 const URGENCY_LEVELS = ['urgent', 'normal', 'bisa_ditunda']
+
+// Target maintenance: 'client' = node client (punya dokumen di `clients`),
+// sisanya = titik bebas di jaringan fiber optik yang cuma punya koordinat.
+const TARGET_TYPES = ['client', 'cable', 'splitter', 'other']
+const POINT_TYPE_LABELS = {
+  cable: 'Titik Kabel',
+  splitter: 'Splitter',
+  other: 'Lokasi Lain'
+}
+
+// Dokumen lama (sebelum ada target_type) selalu maintenance di node client.
+function targetTypeOf(data) {
+  return TARGET_TYPES.includes(data.target_type) ? data.target_type : 'client'
+}
+
+function parseCoord(value, min, max) {
+  if (value === undefined || value === null || value === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) && n >= min && n <= max ? n : null
+}
+
+// Gabungkan jadwal dengan info targetnya. Untuk client: nama/IP/koordinat
+// diambil dari dokumen client. Untuk titik non-client: dari field jadwal
+// sendiri. `client_name` tetap diisi (= target_name) demi kompatibilitas
+// frontend lama.
+function describeTarget(data, client) {
+  const targetType = targetTypeOf(data)
+
+  if (targetType === 'client') {
+    const name = client?.name || data.client_id
+    return {
+      target_type: targetType,
+      target_name: name,
+      client_name: name,
+      client_ip: client?.ip_address || null,
+      cluster_id: client?.cluster_id || null,
+      lat: client?.lat ?? null,
+      lng: client?.lng ?? null
+    }
+  }
+
+  const name = data.location_name || POINT_TYPE_LABELS[targetType]
+  return {
+    target_type: targetType,
+    target_name: name,
+    client_name: name,
+    client_ip: null,
+    cluster_id: null,
+    lat: data.lat ?? null,
+    lng: data.lng ?? null
+  }
+}
+
+// Activity log: client -> subcollection client, titik non-client ->
+// subcollection di bawah dokumen jadwal (lihat firestore.service.js).
+async function logMaintenanceEvent(scheduleId, data, entry) {
+  if (targetTypeOf(data) === 'client') {
+    await addClientLog(data.client_id, entry)
+  } else {
+    await addMaintenancePointLog(scheduleId, {
+      ...entry,
+      target_type: targetTypeOf(data),
+      target_name: data.location_name || POINT_TYPE_LABELS[targetTypeOf(data)]
+    })
+  }
+}
 
 function parseToolsNeeded(raw) {
   if (!raw) return []
@@ -23,35 +89,86 @@ function parseToolsNeeded(raw) {
 // ==============================
 exports.createMaintenance = async (req, res) => {
   try {
-    const { client_id, title, description, urgency, tools_needed, created_by, assigned_to } = req.body
+    const {
+      client_id, title, description, urgency, tools_needed, created_by, assigned_to,
+      target_type, location_name
+    } = req.body
 
-    if (!client_id || !title || !title.trim()) {
+    // target_type opsional: kalau tidak dikirim, perilaku lama (node client).
+    const targetType = target_type === undefined || target_type === ''
+      ? 'client'
+      : target_type
+
+    if (!TARGET_TYPES.includes(targetType)) {
       return res.status(400).json({
         success: false,
-        message: 'client_id dan title wajib diisi'
+        message: `target_type tidak valid (pilih: ${TARGET_TYPES.join(', ')})`
       })
     }
 
-    // 1. Validasi client exist di Firestore
-    const clientDoc = await db.collection('clients').doc(client_id).get()
-    if (!clientDoc.exists) {
-      return res.status(404).json({
+    if (!title || !title.trim()) {
+      return res.status(400).json({
         success: false,
-        message: 'Client/Node tidak ditemukan'
+        message: 'title wajib diisi'
       })
     }
 
-    // 2. Aturan bisnis: 1 node hanya boleh punya 1 maintenance aktif ('open')
-    const activeSnap = await db.collection('maintenance_schedules')
-      .where('client_id', '==', client_id)
-      .where('status', '==', 'open')
-      .get()
+    let targetFields
+    let clientData = null
 
-    if (!activeSnap.empty) {
-      return res.status(400).json({
-        success: false,
-        message: 'Node ini sudah memiliki jadwal maintenance aktif yang belum selesai'
-      })
+    if (targetType === 'client') {
+      if (!client_id) {
+        return res.status(400).json({
+          success: false,
+          message: 'client_id wajib diisi untuk maintenance di node client'
+        })
+      }
+
+      // 1. Validasi client exist di Firestore
+      const clientDoc = await db.collection('clients').doc(client_id).get()
+      if (!clientDoc.exists) {
+        return res.status(404).json({
+          success: false,
+          message: 'Client/Node tidak ditemukan'
+        })
+      }
+      clientData = clientDoc.data()
+
+      // 2. Aturan bisnis: 1 node hanya boleh punya 1 maintenance aktif ('open')
+      const activeSnap = await db.collection('maintenance_schedules')
+        .where('client_id', '==', client_id)
+        .where('status', '==', 'open')
+        .get()
+
+      if (!activeSnap.empty) {
+        return res.status(400).json({
+          success: false,
+          message: 'Node ini sudah memiliki jadwal maintenance aktif yang belum selesai'
+        })
+      }
+
+      targetFields = { target_type: 'client', client_id }
+    } else {
+      // Titik bebas (tengah kabel, splitter, lokasi lain): wajib koordinat.
+      // Tidak ada batas 1-open-per-titik karena satu titik bebas tidak punya
+      // identitas tetap (beda dengan node client).
+      const lat = parseCoord(req.body.lat, -90, 90)
+      const lng = parseCoord(req.body.lng, -180, 180)
+
+      if (lat === null || lng === null) {
+        return res.status(400).json({
+          success: false,
+          message: 'lat dan lng valid wajib diisi untuk maintenance di titik non-client'
+        })
+      }
+
+      targetFields = {
+        target_type: targetType,
+        client_id: null,
+        lat,
+        lng,
+        location_name: location_name ? String(location_name).trim().slice(0, 120) : ''
+      }
     }
 
     // 3. Process photo files (max 5 photos)
@@ -76,7 +193,7 @@ exports.createMaintenance = async (req, res) => {
     const tools = parseToolsNeeded(tools_needed)
 
     const scheduleData = {
-      client_id,
+      ...targetFields,
       title: title.trim(),
       description: description ? description.trim() : '',
       urgency: validUrgency,
@@ -94,7 +211,7 @@ exports.createMaintenance = async (req, res) => {
 
     // Catat activity log
     try {
-      await addClientLog(client_id, {
+      await logMaintenanceEvent(docRef.id, scheduleData, {
         type: 'maintenance_created',
         message: `Jadwal maintenance dibuat: ${scheduleData.title} (${scheduleData.urgency})`,
         urgency: scheduleData.urgency
@@ -109,7 +226,7 @@ exports.createMaintenance = async (req, res) => {
       data: {
         id: docRef.id,
         ...scheduleData,
-        client_name: clientDoc.data()?.name || 'Node'
+        ...describeTarget(scheduleData, clientData)
       }
     })
 
@@ -152,15 +269,10 @@ exports.getMaintenanceList = async (req, res) => {
 
     const items = snap.docs.map(doc => {
       const d = doc.data()
-      const client = clientMap.get(d.client_id)
       return {
         id: doc.id,
         ...d,
-        client_name: client?.name || d.client_id,
-        client_ip: client?.ip_address || null,
-        cluster_id: client?.cluster_id || null,
-        lat: client?.lat || null,
-        lng: client?.lng || null
+        ...describeTarget(d, clientMap.get(d.client_id))
       }
     })
 
@@ -207,19 +319,18 @@ exports.getMaintenanceById = async (req, res) => {
     }
 
     const data = docSnap.data()
-    const clientSnap = await db.collection('clients').doc(data.client_id).get()
-    const client = clientSnap.exists ? clientSnap.data() : null
+    let client = null
+    if (targetTypeOf(data) === 'client' && data.client_id) {
+      const clientSnap = await db.collection('clients').doc(data.client_id).get()
+      client = clientSnap.exists ? clientSnap.data() : null
+    }
 
     return res.json({
       success: true,
       data: {
         id: docSnap.id,
         ...data,
-        client_name: client?.name || data.client_id,
-        client_ip: client?.ip_address || null,
-        cluster_id: client?.cluster_id || null,
-        lat: client?.lat || null,
-        lng: client?.lng || null
+        ...describeTarget(data, client)
       }
     })
 
@@ -288,13 +399,16 @@ exports.updateMaintenance = async (req, res) => {
     if (req.body.urgency && URGENCY_LEVELS.includes(req.body.urgency)) updates.urgency = req.body.urgency
     if (req.body.tools_needed !== undefined) updates.tools_needed = parseToolsNeeded(req.body.tools_needed)
     if (req.body.assigned_to !== undefined) updates.assigned_to = req.body.assigned_to
+    if (req.body.location_name !== undefined && targetTypeOf(currentData) !== 'client') {
+      updates.location_name = String(req.body.location_name).trim().slice(0, 120)
+    }
 
     await docRef.update(updates)
 
     // Catat activity log jika selesai
     if (updates.status === 'done') {
       try {
-        await addClientLog(currentData.client_id, {
+        await logMaintenanceEvent(id, currentData, {
           type: 'maintenance_completed',
           message: `Maintenance selesai: ${currentData.title}`
         })
@@ -343,7 +457,7 @@ exports.deleteMaintenance = async (req, res) => {
     await docRef.delete()
 
     try {
-      await addClientLog(item.client_id, {
+      await logMaintenanceEvent(id, item, {
         type: 'maintenance_cancelled',
         message: `Jadwal maintenance dibatalkan: ${item.title}`
       })

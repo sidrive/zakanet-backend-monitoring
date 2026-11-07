@@ -156,8 +156,30 @@ async function addClientLog(client_id, data) {
     })
 }
 
+// Log untuk maintenance di titik non-client (tengah kabel, splitter, dst)
+// yang tidak punya dokumen client. Disimpan sebagai subcollection `logs` di
+// bawah dokumen jadwalnya supaya tetap ikut terbaca oleh
+// collectionGroup('logs') di activity.controller.js. Subcollection tetap ada
+// walau dokumen jadwal-nya kemudian dihapus (pembatalan), jadi log
+// `maintenance_cancelled` tidak hilang.
+async function addMaintenancePointLog(schedule_id, data) {
+  const db = getFirestore()
+
+  await db
+    .collection('maintenance_schedules')
+    .doc(schedule_id)
+    .collection('logs')
+    .add({
+      client_id: null,
+      maintenance_id: schedule_id,
+      ...data,
+      timestamp: FieldValue.serverTimestamp()
+    })
+}
+
 module.exports = {
   db,
+  addMaintenancePointLog,
   updateClientMeta,
   updateClientMetaImmediate,
   createClient,
