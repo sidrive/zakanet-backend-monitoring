@@ -344,7 +344,7 @@ exports.getMaintenanceById = async (req, res) => {
 }
 
 // ==============================
-// UPDATE MAINTENANCE (PATCH: MARK DONE OR UPDATE)
+// UPDATE MAINTENANCE (PATCH: EDIT DETAILS / PHOTOS / MARK DONE)
 // ==============================
 exports.updateMaintenance = async (req, res) => {
   try {
@@ -362,55 +362,175 @@ exports.updateMaintenance = async (req, res) => {
     const currentData = docSnap.data()
     const updates = {}
 
-    // 1. Jika mengubah status jadi 'done' (Mark Done)
+    // 1. Status transition (mis. Mark Done)
     if (req.body.status === 'done') {
       updates.status = 'done'
       updates.completed_at = Date.now()
+    } else if (req.body.status === 'open') {
+      updates.status = 'open'
+      updates.completed_at = null
+    }
 
-      // Process completion photos if uploaded
-      let completionFiles = []
-      if (req.files && req.files.completion_photos) {
-        completionFiles = Array.isArray(req.files.completion_photos)
-          ? req.files.completion_photos
-          : [req.files.completion_photos]
-      } else if (req.files && Array.isArray(req.files)) {
-        completionFiles = req.files
-      }
+    // 2. Edit Target / Location
+    const newTargetType = req.body.target_type !== undefined ? req.body.target_type : targetTypeOf(currentData)
 
-      if (completionFiles.length > 5) {
+    if (!TARGET_TYPES.includes(newTargetType)) {
+      return res.status(400).json({
+        success: false,
+        message: `target_type tidak valid (pilih: ${TARGET_TYPES.join(', ')})`
+      })
+    }
+
+    if (newTargetType === 'client') {
+      const newClientId = req.body.client_id || currentData.client_id
+      if (!newClientId) {
         return res.status(400).json({
           success: false,
-          message: 'Maksimal 5 foto bukti pengerjaan'
+          message: 'client_id wajib diisi untuk maintenance di node client'
         })
       }
 
-      if (completionFiles.length > 0) {
-        const newCompletionUrls = await uploadMultipleFiles(completionFiles, 'completion_photos')
-        updates.completion_photos = [
-          ...(currentData.completion_photos || []),
-          ...newCompletionUrls
-        ]
+      // Verifikasi jika client berubah atau perpindahan ke node client
+      if (newClientId !== currentData.client_id || targetTypeOf(currentData) !== 'client') {
+        const clientDoc = await db.collection('clients').doc(newClientId).get()
+        if (!clientDoc.exists) {
+          return res.status(404).json({
+            success: false,
+            message: 'Client/Node tidak ditemukan'
+          })
+        }
+
+        // Cek apakah client ini sudah punya open maintenance lain (selain yang sedang diedit ini)
+        const activeSnap = await db.collection('maintenance_schedules')
+          .where('client_id', '==', newClientId)
+          .where('status', '==', 'open')
+          .get()
+
+        const hasOtherActive = activeSnap.docs.some(doc => doc.id !== id)
+        if (hasOtherActive) {
+          return res.status(400).json({
+            success: false,
+            message: 'Node ini sudah memiliki jadwal maintenance aktif yang belum selesai'
+          })
+        }
+      }
+
+      updates.target_type = 'client'
+      updates.client_id = newClientId
+      updates.lat = null
+      updates.lng = null
+      updates.location_name = ''
+    } else {
+      // Titik non-client (kabel, splitter, lokasi lain)
+      const lat = req.body.lat !== undefined ? parseCoord(req.body.lat, -90, 90) : (currentData.lat ?? null)
+      const lng = req.body.lng !== undefined ? parseCoord(req.body.lng, -180, 180) : (currentData.lng ?? null)
+
+      if (lat === null || lng === null) {
+        return res.status(400).json({
+          success: false,
+          message: 'lat dan lng valid wajib diisi untuk maintenance di titik non-client'
+        })
+      }
+
+      updates.target_type = newTargetType
+      updates.client_id = null
+      updates.lat = lat
+      updates.lng = lng
+      if (req.body.location_name !== undefined) {
+        updates.location_name = String(req.body.location_name).trim().slice(0, 120)
       }
     }
 
-    // 2. Jika mengupdate field lain (mis. title, description, urgency, tools_needed)
+    // 3. Edit General Details
     if (req.body.title) updates.title = req.body.title.trim()
     if (req.body.description !== undefined) updates.description = req.body.description.trim()
     if (req.body.urgency && URGENCY_LEVELS.includes(req.body.urgency)) updates.urgency = req.body.urgency
     if (req.body.tools_needed !== undefined) updates.tools_needed = parseToolsNeeded(req.body.tools_needed)
     if (req.body.assigned_to !== undefined) updates.assigned_to = req.body.assigned_to
-    if (req.body.location_name !== undefined && targetTypeOf(currentData) !== 'client') {
-      updates.location_name = String(req.body.location_name).trim().slice(0, 120)
+
+    // 4. Photos Management (Foto Kondisi Awal `photos`)
+    let initialPhotoFiles = []
+    if (req.files && req.files.photos) {
+      initialPhotoFiles = Array.isArray(req.files.photos) ? req.files.photos : [req.files.photos]
+    }
+
+    let keptPhotos = currentData.photos || []
+    if (req.body.existing_photos !== undefined) {
+      try {
+        const parsedExisting = typeof req.body.existing_photos === 'string'
+          ? JSON.parse(req.body.existing_photos)
+          : req.body.existing_photos
+        if (Array.isArray(parsedExisting)) {
+          // Hanya simpan URL foto yang memang ada di currentData.photos
+          keptPhotos = (currentData.photos || []).filter(url => parsedExisting.includes(url))
+        }
+      } catch {
+        // jika gagal parse, pertahankan foto lama
+      }
+    }
+
+    if (keptPhotos.length + initialPhotoFiles.length > 5) {
+      return res.status(400).json({
+        success: false,
+        message: 'Maksimal 5 foto kondisi awal per jadwal maintenance'
+      })
+    }
+
+    if (initialPhotoFiles.length > 0 || req.body.existing_photos !== undefined) {
+      let newPhotoUrls = []
+      if (initialPhotoFiles.length > 0) {
+        newPhotoUrls = await uploadMultipleFiles(initialPhotoFiles, 'maintenance_photos')
+      }
+      updates.photos = [...keptPhotos, ...newPhotoUrls]
+    }
+
+    // 5. Completion Photos Management (`completion_photos`)
+    let completionFiles = []
+    if (req.files && req.files.completion_photos) {
+      completionFiles = Array.isArray(req.files.completion_photos)
+        ? req.files.completion_photos
+        : [req.files.completion_photos]
+    } else if (req.files && Array.isArray(req.files) && updates.status === 'done') {
+      completionFiles = req.files
+    }
+
+    let keptCompletion = currentData.completion_photos || []
+    if (req.body.existing_completion_photos !== undefined) {
+      try {
+        const parsedExistingComp = typeof req.body.existing_completion_photos === 'string'
+          ? JSON.parse(req.body.existing_completion_photos)
+          : req.body.existing_completion_photos
+        if (Array.isArray(parsedExistingComp)) {
+          keptCompletion = (currentData.completion_photos || []).filter(url => parsedExistingComp.includes(url))
+        }
+      } catch {
+        // jika gagal parse, pertahankan foto lama
+      }
+    }
+
+    if (keptCompletion.length + completionFiles.length > 5) {
+      return res.status(400).json({
+        success: false,
+        message: 'Maksimal 5 foto bukti pengerjaan'
+      })
+    }
+
+    if (completionFiles.length > 0 || req.body.existing_completion_photos !== undefined) {
+      let newCompletionUrls = []
+      if (completionFiles.length > 0) {
+        newCompletionUrls = await uploadMultipleFiles(completionFiles, 'completion_photos')
+      }
+      updates.completion_photos = [...keptCompletion, ...newCompletionUrls]
     }
 
     await docRef.update(updates)
 
     // Catat activity log jika selesai
-    if (updates.status === 'done') {
+    if (req.body.status === 'done' && currentData.status !== 'done') {
       try {
         await logMaintenanceEvent(id, currentData, {
           type: 'maintenance_completed',
-          message: `Maintenance selesai: ${currentData.title}`
+          message: `Maintenance selesai: ${updates.title || currentData.title}`
         })
       } catch (e) {
         console.error('[MAINTENANCE_LOG_ERROR]', e.message)
@@ -418,13 +538,21 @@ exports.updateMaintenance = async (req, res) => {
     }
 
     const updatedSnap = await docRef.get()
+    const updatedData = updatedSnap.data()
+
+    let client = null
+    if (targetTypeOf(updatedData) === 'client' && updatedData.client_id) {
+      const clientSnap = await db.collection('clients').doc(updatedData.client_id).get()
+      client = clientSnap.exists ? clientSnap.data() : null
+    }
 
     return res.json({
       success: true,
-      message: updates.status === 'done' ? 'Maintenance ditandai selesai' : 'Jadwal maintenance diperbarui',
+      message: updates.status === 'done' ? 'Maintenance ditandai selesai' : 'Jadwal maintenance berhasil diperbarui',
       data: {
         id: docRef.id,
-        ...updatedSnap.data()
+        ...updatedData,
+        ...describeTarget(updatedData, client)
       }
     })
 
