@@ -59,7 +59,17 @@ async function loadInitialMetadata(db) {
       status,
       fail_count: 0,
       success_count: 0,
-      last_ping: null,
+      // [Fix] Sebelumnya selalu `null` di sini. Akibatnya,
+      // offline-detector.service.js (yang melewati client ber-`last_ping`
+      // null lewat `if (!client.last_ping) continue`) tidak akan PERNAH
+      // bisa mengevaluasi client yang sudah offline SEBELUM restart —
+      // device yang betulan mati tidak akan pernah kirim ping baru, jadi
+      // last_ping-nya tetap null selamanya dan statusnya beku persis apa
+      // kata Firestore terakhir kali (bisa salah "online" tanpa batas
+      // waktu). Isi dengan waktu sekarang supaya detector tetap mulai
+      // menghitung timeout 15 detik dari titik restart — kalau devicenya
+      // memang hidup, ping asli akan segera menimpa nilai ini juga.
+      last_ping: Date.now(),
       response_time: null,
       latency_level: null,
       cluster_id: data.cluster_id,
